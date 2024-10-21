@@ -1,0 +1,153 @@
+version: "3.5"
+
+services:
+  paymob-accept-backend     :
+    build                   : ./paymob_next
+    image                   : 104725311182.dkr.ecr.me-south-1.amazonaws.com/pk-next-staging:paymob-next-backend
+    command                 : uwsgi --socket :8000 --workers 4 --master --processes 8 -b 12829000 --enable-threads --socket-timeout 600 --module paymob_next.wsgi
+    expose                  :
+                            - 8000
+    volumes                 :
+                            - /nfs/static_volume:/app/static
+                            - /nfs/media_volume:/app/media
+                            - /nfs/logs_volume:/app/logs
+    env_file                :
+                            - .env
+    deploy                  :
+      replicas              : 3
+      restart_policy        :
+        condition           : on-failure
+    logging                 :
+      driver                : "json-file"
+      options               :
+        max-size            : "500m"
+    depends_on              :
+                             - redis
+    networks                :
+                            - accept
+
+
+
+  celery_worker             :
+    build                   : ./paymob_next
+    image                   : 104725311182.dkr.ecr.me-south-1.amazonaws.com/paymob_pakistan:paymob-accept-backend
+    command                 : celery -A paymob_next worker -l info -Q paymob_next_celery,acceptance_payment_methods-celery,paymob_auth-celery,paymob_ecommerce-celery
+    env_file                :
+                            - .env
+    depends_on              :
+                            - paymob-accept-backend
+                            - redis
+    deploy                  :
+      replicas              : 3
+      restart_policy        :
+        condition           : on-failure
+    logging                 :
+      driver                : "json-file"
+      options               :
+        max-size            : "100m"
+    networks                :
+                            - accept
+
+
+
+  celery_beat               :
+    build                   : ./paymob_next
+    image                   : 104725311182.dkr.ecr.me-south-1.amazonaws.com/paymob_pakistan:paymob-accept-backend
+    command                 : celery -A paymob_next beat -l info
+    env_file                :
+                            - .env
+    depends_on              :
+                            - paymob-accept-backend
+                            - redis
+    deploy                  :
+      replicas              : 1
+      placement:
+        constraints:
+              - node.role == manager
+      restart_policy        :
+        condition           : on-failure
+    logging                 :
+      driver                : "json-file"
+      options               :
+        max-size            : "100m"
+    networks                :
+                            - accept
+
+
+  redis                     :
+    image                   : redis:6-alpine
+    volumes                 :
+                            - /nfs/redis-data:/var/lib/redis/data
+    ports                   :
+                            - "6379:6379"
+    deploy                  :
+      replicas              : 2
+      restart_policy        :
+        condition           : on-failure
+    logging                 :
+      driver                : "json-file"
+      options               :
+        max-size            : "100m"
+    networks                :
+                            - accept
+
+
+  accept-standalone         :
+    build                   : ./standalone-react
+    image                   : standalone-react
+    volumes                 :
+                            - /nfs/accept-standalone:/app/tempbuild
+    deploy                  :
+      restart_policy        :
+        condition           : on-failure
+        delay               : 5s
+        max_attempts        : 3
+        window              : 120s
+    networks                :
+                            - accept
+    command                 : sh -c "cp -rf /app/build/* /app/tempbuild && exit 0"
+
+  accept-dashboard          :
+    build                   : ./accept_dashboard
+    image                   : accept-dashboard
+    volumes                 :
+                            - /nfs/accept-dashboard:/app/tempbuild
+    deploy                  :
+      restart_policy        :
+        condition           : on-failure
+        delay               : 5s
+        max_attempts        : 3
+        window              : 120s
+    networks                :
+                            - accept
+    command                 : sh -c "cp -rf /app/build/* /app/tempbuild && exit 0"
+
+
+  nginx                     :
+    build                   : ./nginx
+    image                   : 104725311182.dkr.ecr.me-south-1.amazonaws.com/paymob_pakistan:paymob_next_deployment_nginx
+    volumes                 :
+                            - /nfs/letsencrypt/:/etc/letsencrypt/
+                            - /nfs/static_volume:/app/static
+                            - /nfs/media_volume:/app/media
+                            - /nfs/accept-dashboard:/accept-dashboard/build
+                            - /nfs/accept-standalone:/standalone-react/build
+    ports                   :
+                            - 80:80
+                            - 443:443
+    depends_on              :
+                            - paymob-accept-backend
+    deploy                  :
+      replicas              : 3
+      restart_policy        :
+        condition           : on-failure
+    logging                 :
+      driver                : "json-file"
+      options               :
+        max-size            : "100m"
+    networks                :
+                            - accept
+
+networks                    :
+  accept                    :
+
