@@ -1,0 +1,1051 @@
+#App PS Version 0.0.11 #VIDIZMOAppConfigTemp
+#craig updated
+#Getting Parameters from ARM Template
+#============================================================
+
+Param(
+    [String] $vMDNSName,                       #Parameter for Application URL like "vidizmo.eastus.cloudapp.azure.com"
+    [String] $sqlAuthenticationLogin,          #Parameter for Local SQL Username like "svradmin"
+    [String] $sqlAuthenticationPassword,       #Parameter for Local SQL Password
+    [String] $sqlVirtualMachineName,           #Parameter for SQL Server Machine Name
+    [String] $organizationNameWOSpace,         #Parameter for Customer Organization Name
+    [String] $firstNameWOSpace,                #Parameter for Customer First Name 
+    [String] $lastNameWOSpace,                 #Parameter for Customer Last Name
+    [String] $phoneWOSpace,                    #Parameter for Customer Phone Number
+    [String] $whereDidYouHearForUsWOSpace,     #Parameter for Information about where did they hear for VIDIZMO
+    [String] $emailAddress,                    #Parameter for Customer Email Address
+    [String] $webSite,                         #Parameter for Customer Website URL
+    [String] $ASBConnectionString,             #Parameter for ASB Connection String
+    [String] $vidizmoOfferType,                #Parameter for Vidizmo Offer Type
+    [String] $AdminUsername,                   #Parameter Admin Account for Windows Machine
+    [String] $AdminPassword                    #Parameter Admin Password for Windows Machine
+)
+
+if($Cloud -eq 'Avc'){
+    $vMDNSName= Get-Content -Path c:\\cfn\\scripts\\dnsapp.txt
+    $sqlAuthenticationLogin= 'sa'
+    $sqlVirtualMachineName= Get-Content -Path c:\\cfn\\scripts\\DBIP.txt
+    $organizationNameWOSpace= Get-Content -Path c:\\cfn\\scripts\\custcomp.txt
+    $firstNameWOSpace= Get-Content -Path c:\\cfn\\scripts\\firstn.txt
+    $phoneWOSpace= Get-Content -Path c:\\cfn\\scripts\\mobile.txt
+    $whereDidYouHearForUsWOSpace= Get-Content -Path c:\\cfn\\scripts\\info.txt
+    $emailAddress= Get-Content -Path c:\\cfn\\scripts\\emailaws.txt
+    $webSite= Get-Content -Path c:\\cfn\\scripts\\web.txt
+    $sqlinitialpasschange= Get-Content -Path c:\\cfn\\scripts\\DBAZ.txt
+    $sqlAuthenticationPassword= $sqlAuthenticationPass
+    $lastNameWOSpace= "MP"
+        }else {}
+
+#Variables
+#============================================================
+
+#Loging File
+$VAppLogPath             =  'C:\VAppLog'
+$AppLogfile              =  "C:\VAppLog\VIDIZMOAPPPStranscript.txt"
+
+#Artifacts Path
+$VIDZMOArtifactPath      = 'C:\VIDIZMOArtifacts'
+
+#Source For Extracting Artifacts
+$Source                  = 'C:\VIDIZMOArtifacts\DROP.zip'
+
+#ScriptNames
+$EmailLaunchScript       = "EmailAzureLaunch.ps1"
+$allocatedatadisk        = "allocatedatadisk.ps1"
+$InstallIIS              = "InstallIIS.ps1"
+$InstallDotNetCoreBundle = "InstallDotNetCoreBundle.ps1"
+$RemoveDefaultWeb        = "RemoveDefaultWeb.ps1"
+$ImportRegistry          = "ImportRegistry.ps1"
+$InstallVIDIZMOServices  = "InstallVIDIZMOServices.ps1"
+$UpdateRegistry          = "UpdateRegistry.ps1"
+$AddVIDIZMOWebApp        = "AddVIDIZMOWebApp.ps1"
+$RestartServices         = "RestartServices.ps1"
+$EmailToCustomer         = "EmailToCustomer.ps1"
+$AppLogEmail             = "AppLogEmail.ps1"
+$smtpvars                = "smtpvars.txt"
+$GrantLogonAsService     = "GrantLogonAsService.ps1"
+
+#Powershell Script Path
+$VIDArtifactsPath        = "C:\VIDIZMOArtifacts\VIDIZMOAPP\Scripts"
+
+#Managed Disk Letter
+if($Cloud -eq 'Avc'){
+    $DiskLetter              = "D"
+ } else {
+    $DiskLetter              = "F"
+ }
+
+
+#Move VIDIZMO App and CDN
+$VIDIZMOAppPath          = "C:\VIDIZMOArtifacts\VIDIZMOAPP\VIDIZMO"
+$VIDIZMOTrainedDataPath  = "C:\VIDIZMOArtifacts\VIDIZMOAPP\AIModels"
+$VIDIZMOAppMove          = "C:\"
+$VIDIZMOCDNPath          = "C:\VIDIZMOArtifacts\VIDIZMOAPP\CDN"
+$initialpassdll          = "C:\VIDIZMO\Application\Web\"
+$smtppath                = "C:\VIDIZMOArtifacts\VIDIZMOAPP\Scripts\smtpvars.txt"
+$basefolder              = 'C:\cfn\scripts\'
+if($Cloud -eq 'Avc'){
+    $VIDIZMOCDNMove          = "D:\"
+ } else {
+    $VIDIZMOCDNMove          = "F:\"
+ }
+
+
+#PathForDotNetCoreBundle
+$DotNetPath              = "$VIDZMOArtifactPath\VIDIZMOAPP\dotnetcorehostingbundle\dotnet-hosting-win.exe"     #the current version is 2.2.8.
+
+#PathForURLRewrite
+$URLRewritePath          = "$VIDZMOArtifactPath\VIDIZMOAPP\dotnetcorehostingbundle\rewrite_amd64_en-US.msi"  
+$CmdToInstallURLRewrite  = "msiexec.exe /i $URLRewritePath  /quiet"
+
+#VIDIZMODbLicenseActivation
+if($Cloud -eq 'Avc'){
+$LicenseKey      = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('aAB0AHQAcABzADoALwAvAHYAaQBkAGkAegBtAG8ALQBhAHIAdABpAGYAYQBjAHQAcwAuAHMAMwAuAGEAbQBhAHoAbwBuAGEAdwBzAC4AYwBvAG0ALwB0AGUAcwB0AGkAbgBnACsAYQByAHQAaQBmAGEAYwB0AHMALwBWAEkARABJAFoATQBPAEEAUABQAC4AegBpAHAA'))
+}
+else {
+$LicenseKey       = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('aAB0AHQAcABzADoALwAvAG0AYQByAGsAZQB0AGkAbQBhAGcAZQBzAHQAbwByAGEAZwBlAC4AYgBsAG8AYgAuAGMAbwByAGUALgB3AGkAbgBkAG8AdwBzAC4AbgBlAHQALwB2AGkAZABpAHoAbQBvAG0AYQByAGsAZQB0AHAAbABhAGMAZQBhAHIAdABpAGYAYQBjAHQAcwAvAFYASQBEAEkAWgBNAE8AQQBQAFAALQAyADQANAAuAHoAaQBwAD8AcwBwAD0AcgAmAHMAdAA9ADIAMAAyADIALQAwADYALQAyADcAVAAxADQAOgA0ADQAOgA0ADkAWgAmAHMAZQA9ADIAMAAyADUALQAwADYALQAyADcAVAAyADIAOgA0ADQAOgA0ADkAWgAmAHMAdgA9ADIAMAAyADEALQAwADYALQAwADgAJgBzAHIAPQBjACYAcwBpAGcAPQBPADcAYwB4AFIASwB6AGYATABiADAANAByAFUAbwBsADEAOABhADIAdQBIAEgAeABGAHcATQBjAFkATQBMAGUAOAB1AGkAdQBtAEMASgBZAEUAYgAwACUAMwBEAA=='))
+}
+$KeyFile         = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('RABSAE8AUAAuAHoAaQBwAA=='))
+$RegistryFile32Path      =  "$VIDZMOArtifactPath\VIDIZMOAPP\VidizmoRegistryFiles\vidizmoregistry32.reg"
+$RegistryFile64Path      =  "$VIDZMOArtifactPath\VIDIZMOAPP\VidizmoRegistryFiles\vidizmoregistry64.reg"
+$VidizmoDBNewName = "VidizmoDB_6_0"
+
+#VIDIZMO Services 
+$VIDIZMOWorkflow         = "VIDIZMOWorkflowEngine"
+$VIDIZMONotification     = "VIDIZMONotification"
+$VIDIZMOScheduler        = "VIDIZMOScheduler"
+$VIDIZMOCache            = "VIDIZMOCaching"
+#Updated for V8
+$VIDIZMOTracking         = "VIDIZMOTracking"
+$VIDIZMOTelemetry        = "VIDIZMOTelemetry"
+$VIDIZMOEvent            = "VIDIZMOEvent"
+
+$Disk                    = "C:"
+$ServicesPath            = "$Disk\VIDIZMO\Application\Win"
+$VIDIZMOWorkflowPath     = "$ServicesPath\WorkflowService\WorkflowService.exe"
+$VIDIZMONotificationPath = "$ServicesPath\NotificationService\NotificationService.exe"
+$VIDIZMOSchedulerPath    = "$ServicesPath\SchedulerService\SchedulerService.exe"
+$VIDIZMOCachePath        = "$ServicesPath\MemcachedService\VIDIZMOCaching.exe"
+#Updated for V8
+$VIDIZMOTrackingPath     = "$ServicesPath\TrackingService\TrackingService.exe"
+$VIDIZMOTelemetryPath    = "$ServicesPath\TelemetryService\TelemetryService.exe"
+$VIDIZMOEventPath        = "$ServicesPath\EventLoggerService\EventService.exe"
+
+#WebApplication and CDN path
+$WebName                 = "VIDIZMO"
+$WebAppPath              = "C:\VIDIZMO\Application\Web"
+if($Cloud -eq 'Avc'){
+    $CDNPath                 = "D:\CDN"
+ } else {
+    $CDNPath                 = "F:\CDN"
+ }
+
+
+#RecordingSession
+#============================================================
+#Start-Transcript -Path $VAppLogPath -Force -Verbose
+
+
+
+#Creating Directory for Log file
+#============================================================
+try{
+
+New-Item -Path $VAppLogPath -ItemType Directory -Verbose -ErrorAction Stop
+
+Start-Transcript -Path $AppLogfile -Force -Verbose
+
+}catch{
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+
+}
+#============================================================
+Write-Host (Get-Date) " Starting App Script Now"
+
+
+#Creating Directory
+#============================================================
+try{
+New-Item -Path $VIDZMOArtifactPath -ItemType Directory -Verbose -ErrorAction Stop
+}catch{
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+
+}
+#============================================================
+
+
+
+#VIDIZMOAppLicenseActivation
+#============================================================
+function ActivateLicenseWithRetry([string] $ActivateKey, [string] $FileLocation, [int] $retries)
+{
+while($true)
+{
+    try
+    {
+        Invoke-WebRequest $ActivateKey -OutFile $FileLocation -TimeoutSec 15  
+        break
+    }
+    catch
+    {
+        $exceptionMessage = $_.Exception.Message
+        if ($retries -gt 0) {
+            $retries--
+            Start-Sleep -Seconds 10
+        }
+        else
+        {
+            $exception = $_.Exception
+            throw $exception
+        }
+    }
+}
+}
+
+try{
+
+ActivateLicenseWithRetry -ActivateKey $LicenseKey -FileLocation "$VIDZMOArtifactPath\$KeyFile" -retries 20
+
+}catch{
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+#============================================================
+
+
+
+#ExtractingArtifacts
+#============================================================
+
+[Parameter(Position=0)][System.String] $Source,
+[Parameter(Position=1)][System.String] $VIDZMOArtifactPath
+
+try {
+# extracting source to destination
+Expand-Archive -Path "$($Source)" -DestinationPath "$($VIDZMOArtifactPath)" -Verbose -ErrorAction Stop
+}
+catch {
+# writing errors if any
+Write-Verbose $Error[0]
+}
+finally {
+
+}
+#============================================================
+
+
+
+#SMTP Variables
+#============================================================
+$smtpvar= Get-Content -Path $smtppath  
+$smtpvar.GetType() | Format-Table -AutoSize
+
+$emailSmtpServer         = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[0]))
+$emailSmtpServerPort     = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[1]))
+$emailSmtpUser           = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[2]))
+$emailSmtpPass           = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[3]))
+$EmailTo                 = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[4]))
+$AdminEmail              = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[5]))
+$AdminPass               = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[6]))
+$ddlpath                 = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($smtpvar[7]))
+#============================================================
+
+
+
+#VIDIZMO Launch on Azure Email
+#============================================================ 
+
+try {
+
+    $sendLaunchEmailToVIDIZMO = "$VIDArtifactsPath\$EmailLaunchScript -firstNameWOSpace $firstNameWOSpace -lastNameWOSpace $lastNameWOSpace -emailAddress $emailAddress -organizationNameWOSpace $organizationNameWOSpace -webSite $webSite -phoneWOSpace $phoneWOSpace -whereDidYouHearForUsWOSpace $whereDidYouHearForUsWOSpace -vMDNSName $vMDNSName -emailSmtpServer $emailSmtpServer -emailSmtpServerPort $emailSmtpServerPort -emailSmtpUser $emailSmtpUser -emailSmtpPass $emailSmtpPass -EmailTo $EmailTo"
+    Invoke-Expression -Command $sendLaunchEmailToVIDIZMO -ErrorAction Continue
+    
+    
+    }catch {
+        
+        $ErrorMessage = $_.Exception.Message
+        $FailedItem = $_.Exception.ItemName
+    }
+#============================================================
+
+
+if($Cloud -eq 'Avc'){}
+else {
+#Data Disk Allocation
+#============================================================
+try {
+
+$AllocateDataDisk = "$VIDArtifactsPath\$allocatedatadisk -DiskLetter $DiskLetter"
+Invoke-Expression -Command $AllocateDataDisk -ErrorAction Stop
+
+}catch {
+    
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+}
+#============================================================
+}
+
+
+#Move VIDIZMO App & CDN
+#============================================================
+try {
+
+Move-Item -Path $VIDIZMOAppPath -Destination $VIDIZMOAppMove -Verbose
+Move-Item -Path $VIDIZMOCDNPath -Destination $VIDIZMOCDNMove -Verbose
+Move-Item -Path $VIDIZMOTrainedDataPath -Destination $VIDIZMOAppMove -Verbose
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+#============================================================
+
+
+#Get Version
+#============================================================
+
+$versionpath= "$initialpassdll\wwwroot\version.txt"
+$Vversion= Get-Content -Path $versionpath
+Write-Verbose -Message "Application Version = $Vversion" -Verbose
+
+#============================================================
+
+
+#Install IIS
+#============================================================
+try {
+
+Invoke-Expression -Command "$VIDArtifactsPath\$InstallIIS" -ErrorAction Stop
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+#============================================================
+
+
+
+#Install .Net Core Hosting Bundle
+#============================================================
+try {
+
+$InstallDotCore = "$VIDArtifactsPath\$InstallDotNetCoreBundle -DotNetPath $DotNetPath"
+Invoke-Expression -Command $InstallDotCore -ErrorAction Stop
+
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+#============================================================
+
+
+
+#Remove Default Website from IIS
+#============================================================
+try {
+
+Invoke-Expression -Command "$VIDArtifactsPath\$RemoveDefaultWeb" -ErrorAction Continue -Verbose
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+#============================================================
+
+
+
+#Import Registry files
+#============================================================
+try {
+
+$Importreg = "$VIDArtifactsPath\$ImportRegistry -RegistryFile32Path $RegistryFile32Path -RegistryFile64Path $RegistryFile64Path"
+Invoke-Expression -Command $Importreg -ErrorAction Stop
+
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+Start-Sleep -s 5 
+
+#============================================================
+
+#Grant Logon as Service to Local Admin Account
+#============================================================
+try{
+    $hostname = $env:COMPUTERNAME
+    $LogonAsService = "$VIDArtifactsPath\$GrantLogonAsService $AdminUsername $hostname"
+    Invoke-Expression -Command $LogonAsService -ErrorAction Continue
+}
+catch{
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+}
+
+
+#Install VIDIZMO Services
+#============================================================
+try {
+$InstallServices = "$VIDArtifactsPath\$InstallVIDIZMOServices -VIDIZMOWorkflow $VIDIZMOWorkflow -VIDIZMONotification $VIDIZMONotification -VIDIZMOScheduler $VIDIZMOScheduler -VIDIZMOCache $VIDIZMOCache -VIDIZMOTracking $VIDIZMOTracking -VIDIZMOTelemetry $VIDIZMOTelemetry -VIDIZMOEvent $VIDIZMOEvent -Disk $Disk -ServicesPath $ServicesPath -VIDIZMOWorkflowPath $VIDIZMOWorkflowPath -VIDIZMONotificationPath $VIDIZMONotificationPath -VIDIZMOSchedulerPath $VIDIZMOSchedulerPath -VIDIZMOCachePath $VIDIZMOCachePath -VIDIZMOTrackingPath $VIDIZMOTrackingPath -VIDIZMOTelemetrypath $VIDIZMOTelemetryPath -VIDIZMOEventPath $VIDIZMOEventPath -AdminUsername $AdminUsername -adminPassword $AdminPassword"
+Invoke-Expression -Command $InstallServices -ErrorAction Continue
+
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+Start-Sleep -s 5
+#============================================================
+
+
+
+#Encrypt Password
+#============================================================
+try {
+        [Reflection.Assembly]::LoadFile($VIDZMOArtifactPath+"\VIDIZMOAPP\Encryption.dll")
+        $_aes256Encryption = [Encryption.AES256Encryption]::GetInstance()
+        $encryptedSQLPassword = $_aes256Encryption.Encrypt($sqlAuthenticationPassword);        
+    
+}   
+catch {
+
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    }
+Start-Sleep -s 5
+#============================================================
+
+
+#Update Registry
+#============================================================
+try {
+
+$updateVidizmoRegistry = "$VIDArtifactsPath\$UpdateRegistry -sqlVirtualMachineName $sqlVirtualMachineName -sqlAuthenticationLogin $sqlAuthenticationLogin -sqlAuthenticationPassword $encryptedSQLPassword"
+Invoke-Expression -Command $updateVidizmoRegistry -ErrorAction Stop
+
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+Start-Sleep -s 5
+#============================================================
+
+
+
+#Add VIDIZMO WEB App and CDN to IIS
+#============================================================
+try {
+
+$AddWebandCDN = "$VIDArtifactsPath\$AddVIDIZMOWebApp -WebName $WebName -WebAppPath $WebAppPath -CDNPath $CDNPath -AdminUsername $AdminUsername -AdminPassword $AdminPassword"
+Invoke-Expression -Command $AddWebandCDN -ErrorAction Continue
+
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+#============================================================
+
+
+#Install URL Rewrite
+#============================================================
+
+
+try {
+
+    
+    Invoke-Expression -Command $CmdToInstallURLRewrite -ErrorAction Continue
+    
+    
+    }catch {
+    
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    }
+
+
+
+#============================================================    
+# Add updated NUGet and SQL Server
+#============================================================
+try{
+    Install-PackageProvider "NuGet" -MinimumVersion 2.8 -Force | Out-Null
+    Install-Module sqlserver -Force | Out-Null
+}
+catch{
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host $ErrorMessage
+}
+
+#============================================================
+#   add loop for checking to see if db is ready yet?
+#============================================================
+
+function Test-SqlConnection {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServerName,
+
+        [Parameter(Mandatory)]
+        [string]$DatabaseName,
+
+        [Parameter(Mandatory)]
+        [string]$userName,
+        
+        [Parameter(Mandatory)]
+        [string]$password
+    )
+
+    $ErrorActionPreference = 'Stop'
+
+    try {
+   
+        $connectionString = 'Data Source={0};database={1};User ID={2};Password={3};Connection Timeout=15' -f $ServerName,$DatabaseName,$userName,$password
+        $sqlConnection = New-Object System.Data.SqlClient.SqlConnection $ConnectionString
+        $sqlConnection.Open()
+        ## This will run if the Open() method does not throw an exception
+        Write-Host (Get-Date) "   SQL Server is up"
+        $true
+    } catch {
+        Write-Host (Get-Date) "   Sql Server is not up yet"
+        $false
+    } finally {
+        ## Close the connection when we're done
+        $sqlConnection.Close()
+    }
+}
+
+function CheckAppVersionInDB{
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServerName,
+
+        [Parameter(Mandatory)]
+        [string]$DatabaseName,
+
+        [Parameter(Mandatory)]
+        [string]$userName,
+        
+        [Parameter(Mandatory)]
+        [string]$password
+    )
+
+
+    try{
+        $dt = Invoke-SqlCmd -Query "select count(*) from ApplicationConfiguration where [Key]='ApplicationVersion' and value = '8.0.65005'" -ServerInstance $ServerName -Database $DatabaseName -Username $userName -Password  $password
+        if ($dt.Column1 -eq 1){
+            Write-Host (Get-Date) "   VIDIZMO Version in ApplicationConfiguration table is correct"
+            $True
+        }
+        else{
+            Write-Host (Get-Date) "   VIDIZMO Version in ApplicationConfiguration table is not correct or does not exist yet."
+            $False
+            }
+        }
+    catch{
+        $ErrorMessage = $_.Exception.Message
+        $FailedItem = $_.Exception.ItemName
+        Write-Host (Get-Date) "   In the catch"
+        Write-Host (Get-Date) "   "+$ErrorMessage
+        $False
+    }
+}
+
+
+$checkDBStatus = $False
+while ($checkDBStatus -eq $False)
+{
+    $checkDBStatus = Test-SqlConnection -ServerName $sqlVirtualMachineName -DatabaseName $VidizmoDBNewName -userName $sqlAuthenticationLogin -password $sqlAuthenticationPassword
+    if($checkDBStatus -eq $False){
+        Start-Sleep -Seconds 10    
+    }
+    
+}
+
+$checkAppVersion = $False
+while ($checkAppVersion -eq $False)
+{
+    $checkAppVersion = CheckAppVersionInDB -ServerName $sqlVirtualMachineName -DatabaseName $VidizmoDBNewName -userName $sqlAuthenticationLogin -password $sqlAuthenticationPassword
+    if ($checkAppVersion -eq $False){
+        Start-Sleep -Seconds 10    
+    }
+}
+
+
+
+#============================================================
+#Restart Services & IIS
+#============================================================
+try {
+
+Invoke-Expression -Command "$VIDArtifactsPath\$RestartServices" -ErrorAction Continue
+
+}catch {
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+}
+
+
+#============================================================
+# fix for notification service not starting
+#============================================================
+try{
+    $serviceCache = 'VidizmoCaching'
+    $serviceScheduler = 'VIDIZMOScheduler'
+    $serviceWorkflow = 'VIDIZMOWorkflowEngine'
+    $serviceNotification = 'VIDIZMONotification'
+    $serviceTelemetry = 'VIDIZMOTelemetry'
+    $serviceTracking = 'VIDIZMOTracking'
+    $serviceEvent = 'VIDIZMOEvent'
+
+    Restart-Service -Name $serviceCache         -force
+    Restart-Service -Name $serviceScheduler     -force
+    Restart-Service -Name $serviceWorkflow      -force
+    Restart-Service -Name $serviceTelemetry     -force
+    Restart-Service -Name $serviceTracking      -force
+    Restart-Service -Name $serviceEvent         -force
+    Restart-Service -Name $serviceNotification  -force
+
+    #IISRESET
+    Start-Process "iisreset.exe" -NoNewWindow -Wait
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName 
+}
+#============================================================
+
+#============================================================
+#Reseting Password
+#============================================================
+if($Cloud -eq 'Avc'){
+
+    $dlls = Get-ChildItem($ddlpath)
+     
+    foreach ($dll in $dlls){
+     
+        if ($dll.Name -match '.dll$') {
+     
+            [Reflection.Assembly]::LoadFile($dll.FullName)
+        }
+    }
+     
+    [Vidizmo.Management.UserManagement]::UpdatePassword($AdminEmail, $AdminPass, $sqlinitialpasschange)
+    
+        }else {}
+
+#============================================================
+
+function CreateHeader(){
+    #This Function Creates a Header For Vidizmo API Calls 
+    $dict = New-Object "System.Collections.Generic.Dictionary``2[System.String,System.String]"
+    $toAdd = 'application/json'
+    $dict.Add('Content-Type', $toAdd)    
+    return $dict
+}
+function CreateAuthHeader($aToken){
+    #This Function Creates a Header For Vidizmo API Calls (Includes the Bearer Token Required)
+    $AuthDict = New-Object "System.Collections.Generic.Dictionary``2[System.String,System.String]"
+    $toAdd = 'Bearer '+ $aToken
+    $AuthDict.Add('Authorization', $toAdd)        
+    return $AuthDict
+}
+
+
+#============================================================
+# Request Bearer token for API Calls
+#============================================================
+function AuthVidizmo($AuthVidizmoinPortalURL,$AuthVidizmoinUser,$AuthVidizmoinUserPassword){
+    #This Function Calls Vidizmo API to Authenticate the Calling Account and results in a Bearer Token in response.
+    Write-Host (Get-Date) "   Attempting to Connect to Vidizmo...." -ForegroundColor green
+    #Start-Sleep -s 3
+    
+    $Url = "$AuthVidizmoinPortalURL/api/v1/user/authenticate"
+    $params = '
+    {
+     "emailAddress": "<<VIDIZMOUSER>>",
+     "password": "<<VIDIZMOPASSWORD>>"
+    }'
+    $newparams = $params.Replace("<<VIDIZMOUSER>>",$AuthVidizmoinUser).Replace("<<VIDIZMOPASSWORD>>",$AuthVidizmoinUserPassword)    
+    
+    try
+    {
+        $bearerToken = Invoke-WebRequest -Uri $Url -Method POST -Body $newparams -ContentType "application/json" -UseBasicParsing
+        $mytoken = $bearerToken.Content
+        Write-Host (Get-Date) "   Connected to VIDIZMO API - Received Bearer Token & Created Auth Header" -ForegroundColor green
+        $GoodHeader = CreateAuthHeader $mytoken
+        return $GoodHeader
+        
+    }
+    catch
+        {
+        Write-Host "An Error Ocurred Connecting to VIDIZMO API" -ForegroundColor red  
+        exit 1  
+        }
+    
+}
+$APIBaseURL= $vMDNSName
+$vidizmouser = "admin@vidizmo.com"
+$vidizmopassword = "ViDiZmO@1"
+$bearerTokenHeader = AuthVidizmo $APIBaseURL $vidizmouser $vidizmopassword
+
+#============================================================
+# Disable MP4 Encoding Profile via API Call 
+#============================================================
+
+$DisableMP4ProfileAPI = '/api/v1/encoding-profile/update-status/129?tenantId=2&status=false'
+$APIURL = "http://"+$APIBaseURL+$DisableMP4ProfileAPI
+
+try{
+    $request = Invoke-WebRequest -Uri "$APIURL" -Method PUT -Headers $bearerTokenHeader -ContentType "application/json"  -UseBasicParsing 
+    Write-Host "Disabled MP4 Encoding Profile" 
+    if ($request = 'true'){
+       # IISRESET
+    }
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was an error disabling MP4 Encoding Profile" 
+    Write-Host $ErrorMessage
+}
+
+
+
+#============================================================
+# Update Live Chat to use Azure Service Bus via API Call 
+#============================================================
+$splitConnectionString = $ASBConnectionString -split ';'
+$chatURL = $splitConnectionString[0]+';'+$splitConnectionString[1]+';SharedAccessKey='
+
+$primaryKey = $splitConnectionString[2]
+$primaryKeyValue = $primaryKey.Replace('SharedAccessKey=','')
+
+
+$apiPayloadDefault = '[{"id":28,"key":"AzureChatServiceUrl","value":"XXXXXXXXXX","description":"Url for Azure Chat Service.","configurationGroup":"General","dataType":"String"}]'
+$UpdateAppConfigAPI = '/api/v1/application-configuration/update'
+$APIURL = "http://"+$APIBaseURL+$UpdateAppConfigAPI
+$APIBody = $apiPayloadDefault.Replace('XXXXXXXXXX',$chatURL)
+
+try{
+    $request = Invoke-WebRequest -Uri "$APIURL" -Method PUT -Headers $bearerTokenHeader -Body $APIBody -ContentType "application/json"  -UseBasicParsing  
+    Write-Host "Added Chat URL to App Config" 
+    if ($request = 'true'){
+       # IISRESET
+    }
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was an error adding Chat URL to App Config" 
+    Write-Host $ErrorMessage
+}
+
+
+$apiPayloadDefault = '[{"id":66,"key":"AzureServiceBusManageKey","value":"XXXXXXXXXX","description":"Key for Azure Chat Service.","configurationGroup":"General","dataType":"Secure"}]'
+$APIBaseURL= $vMDNSName
+$UpdateAppConfigAPI = '/api/v1/application-configuration/update'
+$APIURL = "http://"+$APIBaseURL+$UpdateAppConfigAPI
+
+$APIBody = $apiPayloadDefault.Replace('XXXXXXXXXX',$primaryKeyValue)
+$APIHeaders = CreateAuthHeader
+try{
+    $request = Invoke-WebRequest -Uri "$APIURL" -Method PUT -Headers $bearerTokenHeader -Body $APIBody -ContentType "application/json"  -UseBasicParsing  
+    Write-Host "Added ASB Manage Key to App Config" 
+    if ($request = 'true'){
+        #IISRESET
+    }
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was an error adding ASB Manage Key to App Config" 
+    Write-Host $ErrorMessage
+}
+
+$apiPayloadDefault = '[{"id":40,"key":"AzureServiceBusSendReceiveKey","value":"XXXXXXXXXX","description":"Secret Key used to send/receive messages","configurationGroup":"General","dataType":"Secure"}]'
+$APIBaseURL= $vMDNSName
+$UpdateAppConfigAPI = '/api/v1/application-configuration/update'
+$APIURL = "http://"+$APIBaseURL+$UpdateAppConfigAPI
+
+$APIBody = $apiPayloadDefault.Replace('XXXXXXXXXX',$primaryKeyValue)
+$APIHeaders = CreateAuthHeader
+try{
+    $request = Invoke-WebRequest -Uri "$APIURL" -Method PUT -Headers $bearerTokenHeader -Body $APIBody -ContentType "application/json"  -UseBasicParsing  
+    Write-Host "Added ASB Send Receive Key to App Config" 
+    if ($request = 'true'){
+        #IISRESET
+    }
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was an error adding ASB Send Receive Key to App Config" 
+    Write-Host $ErrorMessage
+}
+
+
+
+#sleep for 3 mins to make sure that app is back up after app change
+Start-Sleep -Seconds 30
+
+#============================================================
+
+#Set Offer Package
+#============================================================   
+#Offer Package videtpbyol = Enterprise Premium
+#Offer Package videsbyol = Enterprise Standard
+#Offer Package viddembyol = Digital Evidence Management
+
+
+#Offer Package videtppayg = Enterprise Premium Transactable
+#Offer Package videspayg = Enterprise Standard Transactable
+#Offer Package viddempayg = Digital Evidence Management Transactable
+
+$LicenseObjectPath = $VIDZMOArtifactPath + "\VIDIZMOAPP\licenses\" + $vidizmoOfferType + ".txt"
+$licenseObja = Get-Content -Path $LicenseObjectPath
+
+#============================================================    
+# restart iis just to make sure all is ok before releasing
+#============================================================
+Start-Process "iisreset.exe" -NoNewWindow -Wait
+Start-Sleep -Seconds 30
+#============================================================    
+# update the password for the admin account
+#============================================================
+ 
+$apiPayloadDefault = '{"emailAddress":"admin@vidizmo.com","oldPassword":"ViDiZmO@1","newPassword":"XXXXXXXXXX"}'
+
+$APIBaseURL= $vMDNSName
+$UpdateAppConfigAPI = '/api/v1/user/update-password'
+$APIURL = "http://"+$APIBaseURL+$UpdateAppConfigAPI
+
+$APIBody = $apiPayloadDefault.Replace('XXXXXXXXXX',$AdminPassword)
+$APIHeaders = CreateAuthHeader
+try{
+    $request = Invoke-WebRequest -Uri "$APIURL" -Method POST -Headers $bearerTokenHeader -Body $APIBody -ContentType "application/json"  -UseBasicParsing  
+    Write-Host "Updated Password for the admin account" 
+    if ($request = 'true'){
+        #IISRESET
+    }
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was a problem updating the password for the admin account" 
+    Write-Host $ErrorMessage
+}
+
+#============================================================    
+# restart iis just to make sure all is ok before releasing
+#============================================================
+Start-Process "iisreset.exe" -NoNewWindow -Wait
+
+Start-Sleep -Seconds 30
+
+
+#============================================================    
+# update the email address in use by the admin account
+#============================================================
+$updateAdminEmail = @"
+update UserProfile set EmailAddress = '$emailAddress' where EmailAddress = 'admin@vidizmo.com'
+"@
+
+
+try {
+
+    Invoke-Sqlcmd -Query $updateAdminEmail -ServerInstance $sqlVirtualMachineName -Database $VidizmoDBNewName -Username $sqlAuthenticationLogin -Password $sqlAuthenticationPassword -Verbose
+    Write-Host "Updated email address for the admin account to user email" 
+}
+catch {
+
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was a problem updating the email address for the admin account." 
+    Write-Host $ErrorMessage
+
+}  
+
+#============================================================    
+# restart iis just to make sure all is ok before releasing
+#============================================================
+Start-Process "iisreset.exe" -NoNewWindow -Wait
+
+#============================================================
+# Activate license via API Call 
+#============================================================
+$APIBaseURL= $vMDNSName
+$ActivateLicenseAPI = '/api/v1/license/activate-license'
+$APIURL = "http://"+$APIBaseURL+$ActivateLicenseAPI
+$APIBodyTemplate = '{"file":"LICENSEOBJECT"}'
+$APIBody = $APIBodyTemplate.replace('LICENSEOBJECT',$licenseObja)
+$APIHeaders = CreateHeader
+
+try{
+    $request = Invoke-WebRequest -Uri "$APIURL" -Method POST -Headers $APIHeaders -Body $APIBody -ContentType "application/json"  -UseBasicParsing  
+    Write-Host "Activated updated license" 
+    if ($request = 'true'){
+        
+    }
+}
+catch {
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was a problem updating the license." 
+    Write-Host $ErrorMessage
+}
+
+#============================================================    
+# restart iis just to make sure all is ok before releasing
+#============================================================
+Start-Process "iisreset.exe" -NoNewWindow -Wait
+
+
+#============================================================    
+#Clean up ServerLicense Table
+#============================================================
+$truncateServerLicenses = @"
+delete from ServerLicense where serverguid is null or serverguid = '' or len(serverguid)=0
+"@
+
+
+try {
+
+    Invoke-Sqlcmd -Query $truncateServerLicenses -ServerInstance $sqlVirtualMachineName -Database $VidizmoDBNewName -Username $sqlAuthenticationLogin -Password $sqlAuthenticationPassword -Verbose
+    Write-Host "Deleted Server License Records that are not activated" 
+}
+catch {
+
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was a problem deleteing the server licenses that were not activated" 
+    Write-Host $ErrorMessage
+
+}   
+
+#============================================================    
+# restart iis just to make sure all is ok before releasing
+#============================================================
+Start-Process "iisreset.exe" -NoNewWindow -Wait
+Start-Sleep -s 30
+#============================================================
+#Email to Customer
+#============================================================
+
+
+try {
+
+    $sendLogEmailToCustomer = "$VIDArtifactsPath\$EmailToCustomer -emailSmtpServer $emailSmtpServer -emailSmtpServerPort $emailSmtpServerPort -emailSmtpUser $emailSmtpUser -emailSmtpPass $emailSmtpPass -emailAddress $emailAddress -firstNameWOSpace $firstNameWOSpace -vMDNSName $vMDNSName -appPassword $AdminPassword"
+    Invoke-Expression -Command $sendLogEmailToCustomer -ErrorAction Continue
+    Write-Host "Sent Email to customer" 
+    
+    }catch {
+        
+        $ErrorMessage = $_.Exception.Message
+        $FailedItem = $_.Exception.ItemName
+        Write-Host "There was a problem sending email to customer" 
+        Write-Host $ErrorMessage
+    }
+#============================================================
+
+
+
+#============================================================    
+# restart iis just to make sure all is ok before releasing
+#============================================================
+try{
+    Start-Process "iisreset.exe" -NoNewWindow -Wait
+    Write-Host "Restarted IIS for the last time before being done"
+}
+catch{
+    $ErrorMessage = $_.Exception.Message
+    $FailedItem = $_.Exception.ItemName
+    Write-Host "There was a problem restarting IIS at the end"
+    Write-Host $ErrorMessage
+}
+
+
+#============================================================
+#Email Application Server Deployment Details
+#============================================================
+
+try {
+
+    $sendLogEmailToVIDIZMO = "$VIDArtifactsPath\$AppLogEmail -filenameAndPath $AppLogfile -emailSmtpServer $emailSmtpServer -emailSmtpServerPort $emailSmtpServerPort -emailSmtpUser $emailSmtpUser -emailSmtpPass $emailSmtpPass -EmailTo $EmailTo"
+    Invoke-Expression -Command $sendLogEmailToVIDIZMO -ErrorAction Continue
+    
+    
+    }catch {
+        
+        $ErrorMessage = $_.Exception.Message
+        $FailedItem = $_.Exception.ItemName
+    }
+#============================================================
+
+Start-Sleep -s 30
+
+
+#============================================================
+# Restart IIS and Services
+#============================================================
+Write-Host "Restarting Services Just one last time"
+Restart-Service -Name $serviceCache         -force
+Restart-Service -Name $serviceScheduler     -force
+Restart-Service -Name $serviceWorkflow      -force
+Restart-Service -Name $serviceTelemetry     -force
+Restart-Service -Name $serviceTracking      -force
+Restart-Service -Name $serviceEvent         -force
+Restart-Service -Name $serviceNotification  -force
+Write-Host "Restarting IIS Just one last time"
+Start-Process "iisreset.exe" -NoNewWindow -Wait
+
+
+
+
+#Remove Artifcats
+#============================================================
+try{
+
+Remove-Item -Path $VIDZMOArtifactPath -Recurse -Verbose
+
+}catch{
+
+$ErrorMessage = $_.Exception.Message
+$FailedItem = $_.Exception.ItemName
+
+}
+if($Cloud -eq 'Avc') {
+try{
+
+    Remove-Item -Path $basefolder -Recurse -Verbose
+    
+    }catch{
+    
+        $ErrorMessage = $_.Exception.Message
+        $FailedItem = $_.Exception.ItemName
+    }
+} else {}
+#============================================================
+Write-Host (Get-Date) " Ending App Script Now"
+#SessionStop
+#============================================================
+Stop-Transcript
+
+#END
